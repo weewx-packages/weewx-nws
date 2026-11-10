@@ -1141,8 +1141,11 @@ class NWSSkin(SearchList):
         recomputed state, because the count is a fact about the clock and
         goes stale exactly as the badges do.  The two must produce identical
         text; TestCountLine pins these branches, and its
-        test_the_page_script_carries_the_same_wording asserts that every
-        phrase this can emit also appears in the script.
+        test_both_copies_write_the_same_sentence runs the pair over every mix
+        of states.
+
+        Severity is named as the order only where a group has two alerts for
+        it to rank.
         """
         now = datetime.datetime.now().timestamp()
         active = later = 0
@@ -1153,13 +1156,17 @@ class NWSSkin(SearchList):
             elif state == 'upcoming':
                 later += 1
         if active and later:
+            order = ('in effect first, then most serious first.'
+                     if active > 1 or later > 1 else 'in effect first.')
             return ('<b>%s</b> in effect now, <b>%s</b> beginning later '
-                    '&mdash; in effect first, then most serious first.'
+                    '&mdash; %s'
                     % (NWSSkin._plural(active, 'alert'),
-                       NWSSkin._plural(later, 'alert')))
-        if active:
+                       NWSSkin._plural(later, 'alert'), order))
+        if active > 1:
             return ('<b>%s</b> in effect &mdash; most serious first.'
                     % NWSSkin._plural(active, 'alert'))
+        if active:
+            return '<b>1 alert</b> in effect.'
         if later:
             return '<b>%s</b> not yet begun.' % NWSSkin._plural(later, 'alert')
         return ('<b>%s</b> &mdash; none in effect now.'

@@ -22,6 +22,10 @@
   pixels while the chart shrinks with the screen, so at 390px its bottom
   edge met the labels and at 360px it covered their tops; it is now a
   little smaller there, and ends above them down to 320px.
+- The line above the alert cards no longer says "most serious first" when
+  there is nothing to rank.  A single alert reads "1 alert in effect.", and
+  one in effect with one beginning later ends "in effect first."  The
+  severity order is named only where a group has two alerts to put in order.
 
 ## 6.1.2 09/14/2026
 - The 7 Day page's temperature chart names its two halves with a pair of

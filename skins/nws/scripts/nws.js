@@ -69,17 +69,22 @@
      cards' own recomputed state -- otherwise the page can head three cards
      with "3 alerts in effect" while the first of them reads EXPIRED.  The
      wording must match count_line(), which
-     TestCountLine.test_the_page_script_carries_the_same_wording pins. */
+     TestCountLine.test_both_copies_write_the_same_sentence runs against this
+     over every mix of states.  Severity is named as the order only where a
+     group has two alerts for it to rank. */
   function tickCount(active, later, total) {
     var el = document.querySelector('.acountline');
     if (!el) { return; }
     if (active && later) {
       el.innerHTML = '<b>' + plural(active, 'alert') + '</b> in effect now, <b>'
-        + plural(later, 'alert') + '</b> beginning later \u2014 in effect first, '
-        + 'then most serious first.';
-    } else if (active) {
+        + plural(later, 'alert') + '</b> beginning later \u2014 '
+        + (active > 1 || later > 1 ? 'in effect first, then most serious first.'
+                                   : 'in effect first.');
+    } else if (active > 1) {
       el.innerHTML = '<b>' + plural(active, 'alert')
         + '</b> in effect \u2014 most serious first.';
+    } else if (active) {
+      el.innerHTML = '<b>1 alert</b> in effect.';
     } else if (later) {
       el.innerHTML = '<b>' + plural(later, 'alert') + '</b> not yet begun.';
     } else {

@@ -22,16 +22,19 @@ plausible-looking picture.  An axis that excludes a point still draws a chart;
 a bar clamped wrongly still draws a bar.
 
 Note the dew-point axis line is written out TWICE, once in week_chart() and
-once in day_chart(), and every test that covers it is parameterised over BOTH.
+once in day_chart(), and every test that covers it is parameterized over BOTH.
 That duplication is inherited deliberately and left intact -- deduplicating it
 in the same change that ported it would make any difference impossible to
 attribute -- so the tests are what stop the two drifting.
 """
 
 import datetime
+import html
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 import types
@@ -1426,8 +1429,34 @@ class TestCountLine:
     It states how many alerts are IN EFFECT, which is a fact about the clock,
     so scripts/nws.js rewrites it every minute from the cards' own recomputed
     state.  Both implementations must produce identical text -- see
-    test_the_page_script_carries_the_same_wording.
+    test_both_copies_write_the_same_sentence.
     """
+
+    @staticmethod
+    def _alerts(active, later, ended):
+        """That many records in each state, all reckoned from one moment."""
+        now = datetime.datetime.now().timestamp()
+        return ([alert_rec(onset=now - 60, ends=now + 3600, expires=now + 3600)] * active
+                + [alert_rec(onset=now + 3600, ends=now + 7200, expires=now + 7200)] * later
+                + [alert_rec(onset=now - 7200, ends=now - 60, expires=now - 60)] * ended)
+
+    @pytest.mark.parametrize('active, later, ended, expected', [
+        (1, 0, 0, '<b>1 alert</b> in effect.'),
+        (2, 0, 0, '<b>2 alerts</b> in effect &mdash; most serious first.'),
+        (1, 1, 0, '<b>1 alert</b> in effect now, <b>1 alert</b> beginning later'
+                  ' &mdash; in effect first.'),
+        (2, 1, 0, '<b>2 alerts</b> in effect now, <b>1 alert</b> beginning later'
+                  ' &mdash; in effect first, then most serious first.'),
+        (1, 2, 0, '<b>1 alert</b> in effect now, <b>2 alerts</b> beginning later'
+                  ' &mdash; in effect first, then most serious first.'),
+        # An ended alert is in neither group, so it gives nothing to rank.
+        (1, 0, 1, '<b>1 alert</b> in effect.'),
+        (1, 1, 1, '<b>1 alert</b> in effect now, <b>1 alert</b> beginning later'
+                  ' &mdash; in effect first.'),
+    ])
+    def test_the_order_is_claimed_only_where_there_is_something_to_rank(
+            self, active, later, ended, expected):
+        assert NWSSkin.count_line(self._alerts(active, later, ended)) == expected
 
     def test_all_in_effect(self):
         now = datetime.datetime.now().timestamp()
@@ -1474,16 +1503,35 @@ class TestCountLine:
         alerts = [alert_rec(onset=now - 60, ends=now + 60, expires=now + 60)]
         assert '1 alert<' in NWSSkin.count_line(alerts)
 
-    def test_the_page_script_carries_the_same_wording(self):
-        """Two implementations of one sentence.  The realistic failure is
-        editing one and forgetting the other, which this catches without
-        needing a javascript runtime: every distinctive phrase this function
-        can emit must appear in the script that rewrites it."""
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              '..', 'skins', 'nws', 'scripts', 'nws.js')
-        js = open(script).read()
-        for phrase in ('in effect now, ', 'beginning later',
-                       'in effect first, ', 'then most serious first.',
-                       'in effect ', 'most serious first.',
-                       'not yet begun.', 'none in effect now.'):
-            assert phrase in js, 'nws.js is missing the phrase %r' % phrase
+    def test_both_copies_write_the_same_sentence(self):
+        """Two implementations of one sentence, and the realistic failure is
+        editing one and forgetting the other.  Both run here, over every mix
+        of states up to three in effect, three later and two ended, which
+        reaches every branch and the singular and plural of each count.  The
+        page's own plural() and tickCount() run under node, with only the
+        element they write to stubbed.
+
+        Python writes the dash as an entity and the script as the character;
+        a browser parses the two to the same text, so the comparison is made
+        after decoding."""
+        if not shutil.which('node'):
+            pytest.skip('node is not installed')
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '..', 'skins', 'nws', 'scripts', 'nws.js')
+        with open(path, encoding='utf-8') as f:
+            src = f.read()
+        functions = src[src.index('  function plural('):src.index('  function tickAlerts(')]
+        cases = [(active, later, ended)
+                 for active in range(4) for later in range(4) for ended in range(3)
+                 if active + later + ended]
+        script = functions + (
+            '\nvar el = {};'
+            '\nvar document = {querySelector: function () { return el; }};'
+            '\nJSON.parse(process.argv[1]).forEach(function (c) {'
+            ' tickCount(c[0], c[1], c[0] + c[1] + c[2]);'
+            ' console.log(el.innerHTML); });')
+        out = subprocess.run(['node', '-e', script, json.dumps(cases)],
+                             capture_output=True, text=True, timeout=30)
+        assert out.returncode == 0, out.stderr
+        python = [html.unescape(NWSSkin.count_line(self._alerts(*case))) for case in cases]
+        assert out.stdout.strip().split('\n') == python
